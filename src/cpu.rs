@@ -63,13 +63,14 @@ impl Cpu {
         }
     }
 
+    /// Execute the next instruction
     pub fn step(&mut self) {
         let data = self.rom.get(self.pc);
         let instruction = self.read(data);
         self.exec(instruction);
     }
     
-    /// Parse raw data into opcode
+    /// Parse raw data into instruction
     fn read(&mut self, data: String) -> Instruction {
         let tokens: Vec<&str> = data.split(' ').collect();
         let (opcode, args) = tokens.split_at(1);
@@ -90,6 +91,7 @@ impl Cpu {
         }
     }
     
+    /// Parse hlf instruction
     fn read_hlf(&mut self, args: &[&str]) -> Result<Instruction, String>{
         if args.len() != 1 {
             return Err("Invalid number of arguments".to_string());
@@ -101,6 +103,7 @@ impl Cpu {
         }
     }
     
+    /// Run instruction on CPU
     fn exec(&mut self, instruction: Instruction) {
         println!("{:?}", instruction);
     }
