@@ -1,15 +1,6 @@
 use std::ops::{AddAssign, MulAssign, DivAssign};
+use std::str::FromStr;
 use rom::Rom;
-
-#[derive(Debug)]
-pub enum Instruction {
-    Hlf{ rid: RegisterId }, // sets register r to half its current value, then continues with the next instruction.
-    Inc, // increments register r, adding 1 to it, then continues with the next instruction.
-    Jie, // jumps if register r is even
-    Jio, // jumps if register r is 1
-    Jmp, // jump: continue with the instruction offset away relative to itself
-    Tpl, // sets register r to triple its current value, then continues with the next instruction.
-}
 
 #[derive(Debug)]
 pub struct Register {
@@ -19,6 +10,10 @@ pub struct Register {
 impl Register {
     fn new() -> Register {
         Register { val: 0 }
+    }
+    
+    fn is_odd(&self) -> bool {
+        self.val % 2 == 0
     }
 }
 
@@ -66,48 +61,103 @@ impl Cpu {
     /// Execute the next instruction
     pub fn step(&mut self) {
         let data = self.rom.get(self.pc);
-        let instruction = self.read(data);
-        self.exec(instruction);
+        self.exec(data);
     }
     
     /// Parse raw data into instruction
-    fn read(&mut self, data: String) -> Instruction {
+    fn exec(&mut self, data: String) {
         let tokens: Vec<&str> = data.split(' ').collect();
         let (opcode, args) = tokens.split_at(1);
         
-        let instruction = match opcode[0] {
+        println!("{}", data);
+        match opcode[0] {
            "hlf"  => self.read_hlf(args),
-          // "inc" => Opcode::Inc,
-           //"jie" => Opcode::Jie,
-           //"jio" => Opcode::Jio,
-           //"jmp" => Opcode::Jmp,
-           //"tpl" => Opcode::Tpl,
+           "inc" => self.read_inc(args),
+           //"jie" => self.read_jie(args),
+           "jio" => self.read_jio(args),
+           "jmp" => self.read_jmp(args),
+           "tpl" => self.read_tpl(args),
             _ => panic!("unimplemented or illegal instruction: {}", data),
         };
-        
-        match instruction {
-            Ok(instruction) => instruction,
-            Err(reason) => panic!("Cannot parse opcode: {}. Reason: {}", data, reason),
-        }
     }
     
     /// Parse hlf instruction
-    fn read_hlf(&mut self, args: &[&str]) -> Result<Instruction, String>{
+    fn read_hlf(&mut self, args: &[&str]) {
         if args.len() != 1 {
-            return Err("Invalid number of arguments".to_string());
+            panic!("Invalid number of arguments");
         }
         match args[0] {
-            "a," => Ok(Instruction::Hlf{rid: RegisterId::A}),
-            "b," => Ok(Instruction::Hlf{rid: RegisterId::B}),
-            _ => Err("Invalid register name".to_string())
+            "a" => self.hlf(RegisterId::A),
+            "b" => self.hlf(RegisterId::B),
+            _ => panic!("Invalid register name {:?}", args),
         }
     }
     
-    /// Run instruction on CPU
-    fn exec(&mut self, instruction: Instruction) {
-        println!("{:?}", instruction);
+    /// Parse inc instruction
+    fn read_inc(&mut self, args: &[&str]) {
+        if args.len() != 1 {
+            panic!("Invalid number of arguments");
+        }
+        match args[0] {
+            "a" => self.inc(RegisterId::A),
+            "b" => self.inc(RegisterId::B),
+            _ => panic!("Invalid register name {:?}", args),
+        }
+    }
+    
+    /// Parse inc instruction
+    fn read_tpl(&mut self, args: &[&str]) {
+        if args.len() != 1 {
+            panic!("Invalid number of arguments");
+        }
+        match args[0] {
+            "a" => self.tpl(RegisterId::A),
+            "b" => self.tpl(RegisterId::B),
+            _ => panic!("Invalid register name {:?}", args),
+        }
     }
 
+    /// Parse jmp instruction
+    fn read_jmp(&mut self, args: &[&str]) {
+        if args.len() != 1 {
+            panic!("Invalid number of arguments");
+        }
+        let (sign, offset_str) = args[0].split_at(1);
+        if sign != "+" {
+            panic!("Unexpected sign {}", sign);
+        }
+        let offset = usize::from_str(offset_str).unwrap();
+        self.jmp(offset);
+    }
+
+    /// Parse jio instruction
+    fn read_jio(&mut self, args: &[&str]) {
+        if args.len() != 2 {
+            panic!("Invalid number of arguments");
+        };
+        
+        {
+            let register = match args[0] {
+                "a," => &self.a,
+                "b," => &self.b,
+                _ => panic!("Invalid register name {:?}", args),
+            };
+            
+            if !register.is_odd() {
+                self.pc += 1;
+                return;
+            }
+        }
+        
+        // TODO: Avoid duplicate code
+        let (sign, offset_str) = args[1].split_at(1);
+        if sign != "+" {
+            panic!("Unexpected sign {}", sign);
+        }
+        let offset = usize::from_str(offset_str).unwrap();
+        self.jmp(offset);
+    }
+    
     fn get_register(&mut self, r: RegisterId) -> &mut Register {
         match r {
             RegisterId::A => &mut self.a,
@@ -124,26 +174,31 @@ impl Cpu {
         self.pc += 1;
     }
 
-    // tpl r sets register r to triple its current value, then continues with the next instruction.
+    /// tpl r sets register r to triple its current value, then continues with the next instruction.
     fn tpl(&mut self, rid: RegisterId) {
-        let register = self.get_register(rid);
-        *register *= 3;
+        {
+            let register = self.get_register(rid);
+            *register *= 3;
+        }
+        self.pc += 1;
     }
 
-    // inc r increments register r, adding 1 to it, then continues with the next instruction.
+    /// inc r increments register r, adding 1 to it, then continues with the next instruction.
     fn inc(&mut self, rid: RegisterId) {
-        let register = self.get_register(rid);
-        *register += 1;
+        {
+            let register = self.get_register(rid);
+            *register += 1;
+        }
+        self.pc += 1;
     }
 
-    // jmp offset is a jump; it continues with the instruction offset away relative to itself.
+    /// jmp offset is a jump; it continues with the instruction offset away relative to itself.
+    fn jmp(&mut self, offset: usize) {
+        self.pc += offset;
+    }
+
     // jie r, offset is like jmp, but only jumps if register r is even ("jump if even").
 
-    // jio r, offset is like jmp, but only jumps if register r is 1 ("jump if one", not odd).
-    // fn jio(&mut self, rid: Register) {
-    //  let register = self.get_register(rid);
-
-    // }
 }
 
 #[cfg(test)]

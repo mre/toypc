@@ -22,8 +22,7 @@ fn main() {
     let rom = Rom::new(lines);
     let mut cpu = Cpu::new(rom);
 
-    //loop {
-    for i in 1..10 {
+    loop {
         cpu.step()
     }
 }

@@ -1,5 +1,3 @@
-use std::ops::Index;
-
 pub struct Rom {
     instructions: Vec<String>,
 }
